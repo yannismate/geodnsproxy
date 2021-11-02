@@ -49,7 +49,8 @@ fn handle_incoming(sock: &UdpSocket, state: &AppState) -> Result<(), Box<dyn Err
 
   let smallest_zone = state.cfg.geo_zones.iter()
     .filter(|z| {z.cidr.contains(src.ip())})
-    .min_by_key(|z| {z.cidr.size()}).ok_or_else(|| {NoMatchingZoneError{}})?;
+    .min_by_key(|z| {z.cidr.size()})
+    .ok_or(NoMatchingZoneError{})?;
 
   println!("Request from {} is in GeoZone {}. Proxying to {}...", src.ip(), smallest_zone.name, smallest_zone.nameserver);
 

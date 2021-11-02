@@ -37,7 +37,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76fbd10dce159c002b9c688ae8ab7cd531151e185e0ad360f4bfea3b0eede3a8"
 
 [[package]]
-name = "geodnproxy"
+name = "geodnsproxy"
 version = "0.1.0"
 dependencies = [
  "cidr-utils",
