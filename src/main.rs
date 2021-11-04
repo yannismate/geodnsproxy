@@ -4,9 +4,11 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::time::Duration;
 use cidr_utils::cidr::{IpCidr, Ipv4Cidr};
+use rayon::{ThreadPool, ThreadPoolBuilder};
 
 struct AppState {
-  pub cfg: GeoDnsProxyCfg
+  pub cfg: GeoDnsProxyCfg,
+  pub threads: ThreadPool
 }
 
 struct GeoDnsProxyCfg {
@@ -28,8 +30,13 @@ fn main() {
   };
 
   let cfg = GeoDnsProxyCfg{geo_zones: vec![z1]};
+  //Automatically use 1 thread per logical cpu core
+  let threads = ThreadPoolBuilder::new().build().expect("Could not start thread pool");
 
-  let state = Arc::new(AppState {cfg});
+  let state = Arc::new(AppState {
+    cfg,
+    threads
+  });
 
   let sock = UdpSocket::bind("127.0.0.1:53").expect("Could not bind port");
 
@@ -59,7 +66,7 @@ fn handle_incoming(sock: &UdpSocket, state: &AppState) -> Result<(), Box<dyn Err
   proxy_sock.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
   let sock_cl = sock.try_clone()?;
   let proxy_sock_cl = proxy_sock.try_clone()?;
-  std::thread::spawn(move || {
+  state.threads.spawn(move || {
     let mut rec_buf = [0; 512];
     while let Ok((amt_rec, _src_rec)) = proxy_sock_cl.recv_from(&mut rec_buf) {
       let rec_buf = &mut rec_buf[..amt_rec];
