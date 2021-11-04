@@ -51,8 +51,6 @@ fn handle_incoming(sock: &UdpSocket, state: &AppState) -> Result<(), Box<dyn Err
   let mut buf = [0; 512];
   let (amt, src) = sock.recv_from(&mut buf)?;
 
-  //Reduce buffer size to actual content length
-  let buf = &mut buf[..amt];
 
   let smallest_zone = state.cfg.geo_zones.iter()
     .filter(|z| {z.cidr.contains(src.ip())})
@@ -61,19 +59,23 @@ fn handle_incoming(sock: &UdpSocket, state: &AppState) -> Result<(), Box<dyn Err
 
   println!("Request from {} is in GeoZone {}. Proxying to {}...", src.ip(), smallest_zone.name, smallest_zone.nameserver);
 
-  //Automatically assign port
-  let proxy_sock = UdpSocket::bind("0.0.0.0:0").unwrap();
-  proxy_sock.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+  let ns_addr = smallest_zone.nameserver;
+
   let sock_cl = sock.try_clone()?;
-  let proxy_sock_cl = proxy_sock.try_clone()?;
   state.threads.spawn(move || {
+    //Reduce buffer size to actual content length
+    let buf = &mut buf[..amt];
+
+    //Automatically assign port
+    let proxy_sock = UdpSocket::bind("0.0.0.0:0").unwrap();
+    proxy_sock.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+    proxy_sock.send_to(buf, SocketAddr::new(ns_addr, 53)).unwrap();
     let mut rec_buf = [0; 512];
-    while let Ok((amt_rec, _src_rec)) = proxy_sock_cl.recv_from(&mut rec_buf) {
+    while let Ok((amt_rec, _src_rec)) = proxy_sock.recv_from(&mut rec_buf) {
       let rec_buf = &mut rec_buf[..amt_rec];
       sock_cl.send_to(rec_buf, src).expect("Could not forward response");
     }
   });
-  proxy_sock.send_to(buf, SocketAddr::new(smallest_zone.nameserver, 53)).unwrap();
 
   Ok(())
 
