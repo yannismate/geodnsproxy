@@ -15,7 +15,7 @@ jobs:
           command: build
           args: --release
       - uses: actions/upload-artifact@v2
-        name: Archive code coverage results
+        name: Upload binary as artifact
         with:
           name: geodnsproxy
           path: target/release/geodnsproxy
