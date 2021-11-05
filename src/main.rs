@@ -50,7 +50,10 @@ fn main() {
         let mut queue = response_queue_cl.0.lock().unwrap();
         match queue.pop_front() {
           Some(packet) => break packet,
-          None => queue = response_queue_cl.1.wait(queue).unwrap()
+          None => match response_queue_cl.1.wait(queue).unwrap().pop_front() {
+            None => continue,
+            Some(packet) => break packet
+          }
         }
       };
 
@@ -90,7 +93,10 @@ fn main() {
         let mut queue = outgoing_queue.0.lock().unwrap();
         match queue.pop_front() {
           Some(packet) => break packet,
-          None => queue = outgoing_queue.1.wait(queue).unwrap()
+          None => match outgoing_queue.1.wait(queue).unwrap().pop_front() {
+            None => continue,
+            Some(packet) => break packet
+          }
         }
       };
       let addr_ns = get_ns_addr(&cfg.geo_zones, packet.2.ip());
@@ -98,7 +104,7 @@ fn main() {
         None => println!("[WARN] Could not find GeoZone for packet from {}", packet.2),
         Some(addr) => {
           let out_buf = &mut packet.0[..packet.1];
-          let packet_id = get_packet_id(&out_buf);
+          let packet_id = get_packet_id(out_buf);
           id_addr_map.lock().unwrap().insert(packet_id, packet.2);
           out_socket.send_to(out_buf, SocketAddr::new(addr, 53)).unwrap_or_else(|err| {println!("[ERR] Outgoing DNS packet: {:?}", err); 0});
         }
@@ -119,11 +125,11 @@ fn main() {
 
 }
 
-fn get_ns_addr(zones: &Vec<GeoZone>, addr: IpAddr) -> Option<IpAddr> {
+fn get_ns_addr(zones: &[GeoZone], addr: IpAddr) -> Option<IpAddr> {
   zones.iter()
     .filter(|z| {z.cidr.contains(addr)})
     .min_by_key(|z| {z.cidr.size()})
-    .and_then(|z| {println!("[INFO] Packet from {} routed to zone {}", addr, z.name); Some(z.nameserver)})
+    .map(|z| {println!("[INFO] Packet from {} routed to zone {}", addr, z.name); z.nameserver})
 }
 
 #[inline]
