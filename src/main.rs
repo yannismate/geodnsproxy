@@ -1,7 +1,9 @@
 use std::collections::{HashMap, VecDeque};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::fs::File;
+use std::net::{IpAddr, SocketAddr, UdpSocket};
+use std::str::FromStr;
 use std::sync::{Arc, Condvar, Mutex};
-use cidr_utils::cidr::{IpCidr, Ipv4Cidr};
+use cidr_utils::cidr::IpCidr;
 
 struct GeoDnsProxyCfg {
   pub geo_zones: Vec<GeoZone>
@@ -17,13 +19,7 @@ type ProxiedPacket = ([u8; 512], usize, SocketAddr);
 
 fn main() {
 
-  let z1 = GeoZone{
-    name: String::from("local"),
-    cidr: IpCidr::V4(Ipv4Cidr::from_str(String::from("127.0.0.0/8")).unwrap()),
-    nameserver: IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))
-  };
-
-  let cfg = GeoDnsProxyCfg{geo_zones: vec![z1]};
+  let cfg = load_cfg();
   let cfg = Arc::new(cfg);
 
   let in_socket = UdpSocket::bind("127.0.0.1:53").expect("Could not bind port");
@@ -123,6 +119,38 @@ fn main() {
     outgoing_queue_cl.1.notify_one();
   }
 
+}
+
+const CFG_MALFORMED : &str = "config.json is malformed";
+fn load_cfg() -> GeoDnsProxyCfg {
+  let file = File::open("config.json").expect("Could not open config.json");
+  let json : serde_json::Value = serde_json::from_reader(file).expect("config.json is not parseable");
+
+  let zones : &Vec<serde_json::Value> = json.get("geo_zones").expect(CFG_MALFORMED)
+    .as_array().expect(CFG_MALFORMED);
+
+  let mut geo_zones = Vec::new();
+
+  for zone in zones {
+    let name = zone.get("name").expect(CFG_MALFORMED)
+      .as_str().expect(CFG_MALFORMED).to_string();
+
+    let cidr = IpCidr::from_str(
+      zone.get("cidr").expect(CFG_MALFORMED).as_str().expect(CFG_MALFORMED)
+    ).expect(&*format!("CIDR in zone {} is not valid", name));
+
+    let nameserver = IpAddr::from_str(
+      zone.get("nameserver").expect(CFG_MALFORMED).as_str().expect(CFG_MALFORMED)
+    ).expect(&*format!("Nameserver address in zone {} is not valid", name));
+
+    geo_zones.insert(0,GeoZone {
+      name,
+      cidr,
+      nameserver
+    });
+  }
+
+  GeoDnsProxyCfg {geo_zones}
 }
 
 fn get_ns_addr(zones: &[GeoZone], addr: IpAddr) -> Option<IpAddr> {
