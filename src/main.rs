@@ -6,7 +6,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use cidr_utils::cidr::IpCidr;
 
 struct GeoDnsProxyCfg {
-  pub geo_zones: Vec<GeoZone>
+  pub geo_zones: Vec<GeoZone>,
+  pub bind_addr: String
 }
 
 struct GeoZone {
@@ -22,7 +23,7 @@ fn main() {
   let cfg = load_cfg();
   let cfg = Arc::new(cfg);
 
-  let in_socket = UdpSocket::bind("127.0.0.1:53").expect("Could not bind port");
+  let in_socket = UdpSocket::bind(&*cfg.bind_addr).expect("Could not bind port");
   let out_socket = UdpSocket::bind("0.0.0.0:0").expect("Could not bind outgoing port");
 
   let in_socket_cl = in_socket.try_clone().expect("Could not clone main socket");
@@ -126,6 +127,9 @@ fn load_cfg() -> GeoDnsProxyCfg {
   let file = File::open("config.json").expect("Could not open config.json");
   let json : serde_json::Value = serde_json::from_reader(file).expect("config.json is not parseable");
 
+  let bind_addr = json.get("bind_addr").expect(CFG_MALFORMED).as_str().expect(CFG_MALFORMED);
+  let bind_addr = String::from(bind_addr);
+
   let zones : &Vec<serde_json::Value> = json.get("geo_zones").expect(CFG_MALFORMED)
     .as_array().expect(CFG_MALFORMED);
 
@@ -150,7 +154,7 @@ fn load_cfg() -> GeoDnsProxyCfg {
     });
   }
 
-  GeoDnsProxyCfg {geo_zones}
+  GeoDnsProxyCfg { bind_addr, geo_zones }
 }
 
 fn get_ns_addr(zones: &[GeoZone], addr: IpAddr) -> Option<IpAddr> {
